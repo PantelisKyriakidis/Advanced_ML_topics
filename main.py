@@ -31,8 +31,8 @@ from keras.utils.vis_utils import plot_model
 
 # ~~~~~setting up the parameters of the model~~~~~~~~~~~~~~~~~~~~
 # data settings
-loading_option = "relatedness"  # relatedness or info_source or info_type
-balancing = True
+loading_option = "info_source"  # relatedness or info_source or info_type
+balancing = False
 # network settings
 embedding_dim = 300
 epochs = 400
@@ -46,7 +46,7 @@ load_model = False  # load trained model or train it from start
 if loading_option == "relatedness":
     n_class = 2
 else:
-    n_class = 7
+    n_class = 8
 
 def graph(history, fig_name="losses.png"):
     loss_train = history['loss']
@@ -62,7 +62,7 @@ def graph(history, fig_name="losses.png"):
     fig.savefig(fig_name)
 
 
-def model(input_shape, vocab_size, n_class, optimizer, loss, embedding_dim, embedding_matrix):
+def model_init(input_shape, vocab_size, n_class, optimizer, loss, embedding_dim, embedding_matrix):
     model_input = Input(shape=(input_shape,), name="text_input")
     emb = Embedding(vocab_size + 1, embedding_dim, weights=[embedding_matrix],
                                input_length=input_shape,
@@ -103,8 +103,12 @@ def evaluation(x_test, y_test, history, index_before_shuffle=None):
     report = classification_report(ytrue, pred, output_dict=True)
     report["accuracy"] = {"accuracy": report["accuracy"]}  # cause only accuracy is not a dict and it crashes in df conversion later
     report["loss"] = {"training": min(history["loss"]),"validation": min(history["val_loss"])}
-    report["auc_macro"] = {"auc_macro": roc_auc_score(ytrue, pr[:, 1], average='macro')}
-    report["auc_weighted"] = {"auc_weighted": roc_auc_score(ytrue, pr[:, 1], average='weighted')}
+    if loading_option == "relatedness":
+        report["auc_macro"] = {"auc_macro": roc_auc_score(ytrue, pr[:, 1], average='macro')}
+        report["auc_weighted"] = {"auc_weighted": roc_auc_score(ytrue, pr[:, 1], average='weighted')}
+    else:
+        report["auc_macro"] = {"auc_macro": roc_auc_score(ytrue, pr, average='macro', multi_class='ovo')}
+        report["auc_weighted"] = {"auc_weighted": roc_auc_score(ytrue, pr, average='weighted', multi_class='ovo')}
 
     # saving results
     predictions = dict()
@@ -122,7 +126,7 @@ def evaluation(x_test, y_test, history, index_before_shuffle=None):
 if __name__ == '__main__':
 
     # loading and preprocessing data
-    p = Preprocessor.Pipeline()
+    p = Preprocessor.Pipeline(load_setting=loading_option, n_classes=n_class)
     tweets, labels = p.pipe()
     xtrain, ytrain, xtest, ytest = p.splitting(tweets, labels)
     if balancing:
@@ -149,7 +153,7 @@ if __name__ == '__main__':
     if load_model:
         model = keras.models.load_model('saved_model')
     else:
-        model = model(xtrain.shape[1], len(tokenizer.word_index), n_class, optimizer, loss, embedding_dim, embedding_matrix)
+        model = model_init(xtrain.shape[1], len(tokenizer.word_index), n_class, optimizer, loss, embedding_dim, embedding_matrix)
         history = training(xtrain, ytrain, epochs, batch_size, early_stop_call=early_stop_call)
         graph(history.history)
         evaluation(xtest, ytest, history.history)

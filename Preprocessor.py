@@ -6,12 +6,21 @@ import os
 from collections import Counter
 import json
 import sklearn
+from sklearn.preprocessing import LabelEncoder
 
 
 class Pipeline:
 
-    def __init__(self):
+    def __init__(self, load_setting, n_classes):
+        self.load_setting = load_setting
+        self.n_classes = n_classes
         pass
+
+    # label names getter
+    def get_label_names(self):
+        try: return self.enc.inverse_transform(list(range(self.n_classes)))
+        except AttributeError:
+            print("There is no attribute enc in Preprocessor. encoder is not used in binary classification")
 
     # loading and preprocessing data.
     def pipe(self):
@@ -36,12 +45,13 @@ class Pipeline:
     # if called only for test: train_data is None --> so it returns None xtrain var.
     def tokens(self, test_data, train_data=None, tokenizer=None, maxim=None):
         xtrain = None
-        self.maxim=maxim
+        self.maxim = maxim
         if train_data is not None:
             tokenizer = tf.keras.preprocessing.text.Tokenizer(oov_token='<OOV>')
             tokenizer.fit_on_texts(train_data)
             train_indexes = tokenizer.texts_to_sequences(train_data)
-            if self.maxim == None: self.maxim = max([len(i) for i in train_indexes])
+            if self.maxim is None:
+                self.maxim = max([len(i) for i in train_indexes])
             xtrain = tf.keras.preprocessing.sequence.pad_sequences(train_indexes, maxlen=self.maxim)
         test_indexes = tokenizer.texts_to_sequences(test_data)
         xtest = tf.keras.preprocessing.sequence.pad_sequences(test_indexes, maxlen=self.maxim)
@@ -87,22 +97,33 @@ class Pipeline:
 
     def transform_data(self, data):
         tweets = data.iloc[:, 1].to_numpy()  # tweets to nd array
-        labels = data.iloc[:, 4].to_numpy()  # informativeness is the label column.
-        # convert label values: not related --> 0 , related --> 1
-        for i, label in enumerate(labels):
-            if label == "Not applicable":
-                labels[i] = 0
-            elif label == "Not related":
-                labels[i] = 0
-            else:
-                labels[i] = 1
+        if self.load_setting == "relatedness":
+            labels = data.iloc[:, 4].to_numpy()  # informativeness is the label column.
+        elif self.load_setting == "info_source":
+            labels = data.iloc[:,2]
+        elif self.load_setting == "info_type":
+            labels = data.iloc[:,3]
+
+        if self.load_setting != "relatedness":
+            self.enc = LabelEncoder()
+            labels = self.enc.fit_transform(labels)
+        else:
+            # convert label values: not related --> 0 , related --> 1
+            for i, label in enumerate(labels):
+                if label == "Not applicable":
+                    labels[i] = 0
+                elif label == "Not related":
+                    labels[i] = 0
+                else:
+                    labels[i] = 1
         labels = tf.keras.utils.to_categorical(labels, num_classes=len(Counter(labels)), dtype='float32')
         return tweets, labels
 
     def read_data(self):
         try:
-            data = pd.read_csv("data/data_relatedness.csv")
+            data = pd.read_csv("data/data.csv")
         except FileNotFoundError:
+            print("there is no dataset in ")
             list_subfolders = sorted([f.name for f in os.scandir("data") if
                                       f.is_dir()])  # scans the folder "data" to get a list of all subfolders
             # data is the dataframe for all concatenated datasets , initialized with the first crisis data
