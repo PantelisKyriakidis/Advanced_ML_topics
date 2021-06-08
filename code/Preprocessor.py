@@ -6,6 +6,7 @@ import os
 from collections import Counter
 import json
 import sklearn
+import imblearn
 from sklearn.preprocessing import LabelEncoder
 
 
@@ -57,32 +58,65 @@ class Pipeline:
         xtest = tf.keras.preprocessing.sequence.pad_sequences(test_indexes, maxlen=self.maxim)
         return tokenizer, xtrain, xtest
 
-    def balancing(self, tweets, labels):
-        new_i = np.random.permutation(len(labels))
-        labels = labels[new_i]
-        tweets = tweets[new_i]
+    # def balance(self,tweets,labels):
+    #     labels = np.argmax(labels, axis=1) #oneHot to 1 column
+    #     tweets = tweets.reshape(-1,1) #because x is single feature
+    #     ros = imblearn.over_sampling.RandomOverSampler(random_state=0) #random state is set to a value for testing consistency
+    #     x_res, y_res = ros.fit_resample(tweets,rawLabels) #resampling
+    #     y_res = y_res.astype(int)
+    #     x_res = x_res.flatten()
+    #     hotLabels = np.zeros((y_res.size,y_res.max()+1))
+    #     hotLabels[np.arange(y_res.size),y_res] = 1
+    #     return x_res,hotLabels
 
-        yy = []
-        xx = []
-        y = np.argmax(labels, axis=1)
-        for i, t in enumerate(y):
-            if t == 0:
-                yy.append(t)
-                xx.append(tweets[i])
-        counter = 0
-        for i, t in enumerate(y):
-            if t == 1:
-                yy.append(t)
-                xx.append(tweets[i])
-                counter += 1
-            if counter >= len(y) - y.sum():
-                break
-        yy = np.asarray(yy)
-        xx = np.asarray(xx)
-        new_i = np.random.permutation(len(yy))
-        labels = yy[new_i]
-        tweets = xx[new_i]
-        return tweets, tf.keras.utils.to_categorical(labels, num_classes=len(Counter(labels)), dtype='float32')
+        
+
+    def balancing(self, tweets, labels, strategy="under"):
+        enc = sklearn.preprocessing.OneHotEncoder()
+        vec = sklearn.feature_extraction.text.CountVectorizer
+        tweets = tweets.reshape((-1,1))
+        tweets_enc = enc.fit_transform(tweets)
+        tweets_enc = tweets_enc.toarray()
+        labels = np.argmax(labels, axis=1)
+        if strategy == "under":
+            undersample = imblearn.under_sampling.RandomUnderSampler(sampling_strategy='majority')
+            y_res, x_res = undersample.fit_resample(tweets_enc, labels)
+        elif strategy == "over":
+            oversample = imblearn.over_sampling.RandomOverSampler(sampling_strategy='minority')
+            y_res, x_res = oversample.fit_resample(tweets_enc, labels)
+        else:
+            mix = imblearn.combine.SMOTEENN(random_state=0)
+            y_res, x_res = mix.fit_resample(tweets_enc, labels)
+
+        x_res = x_res.flatten()
+        y_res = enc.fit_transform(y_res)
+        return x_res, y_res
+    # def balancing(self, tweets, labels):
+    #     new_i = np.random.permutation(len(labels))
+    #     labels = labels[new_i]
+    #     tweets = tweets[new_i]
+
+    #     yy = []
+    #     xx = []
+    #     y = np.argmax(labels, axis=1)
+    #     for i, t in enumerate(y):
+    #         if t == 0:
+    #             yy.append(t)
+    #             xx.append(tweets[i])
+    #     counter = 0
+    #     for i, t in enumerate(y):
+    #         if t == 1:
+    #             yy.append(t)
+    #             xx.append(tweets[i])
+    #             counter += 1
+    #         if counter >= len(y) - y.sum():
+    #             break
+    #     yy = np.asarray(yy)
+    #     xx = np.asarray(xx)
+    #     new_i = np.random.permutation(len(yy))
+    #     labels = yy[new_i]
+    #     tweets = xx[new_i]
+    #     return tweets, tf.keras.utils.to_categorical(labels, num_classes=len(Counter(labels)), dtype='float32')
 
     def splitting(self, tweets, labels):
         split = sklearn.model_selection.StratifiedShuffleSplit(n_splits=1,
