@@ -1,12 +1,13 @@
 import nltk
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import os
 from collections import Counter
-import json
 import sklearn
 from sklearn.preprocessing import LabelEncoder
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
+import tensorflow as tf
 
 
 class Pipeline:
@@ -42,51 +43,23 @@ class Pipeline:
         tw = [" ".join(tweet) for tweet in tw]
         return np.asarray(tw)
 
-    # if called only for test: train_data is None --> so it returns None xtrain var.
-    def tokens(self, test_data, train_data=None, tokenizer=None, maxim=None):
-        xtrain = None
-        self.maxim = maxim
-        if train_data is not None:
-            tokenizer = tf.keras.preprocessing.text.Tokenizer(oov_token='<OOV>')
-            tokenizer.fit_on_texts(train_data)
-            train_indexes = tokenizer.texts_to_sequences(train_data)
-            if self.maxim is None:
-                self.maxim = max([len(i) for i in train_indexes])
-            xtrain = tf.keras.preprocessing.sequence.pad_sequences(train_indexes, maxlen=self.maxim)
-        test_indexes = tokenizer.texts_to_sequences(test_data)
-        xtest = tf.keras.preprocessing.sequence.pad_sequences(test_indexes, maxlen=self.maxim)
-        return tokenizer, xtrain, xtest
+    def balancing(self, tweets, labels, strategy="under"):
+        tweets = tweets.reshape((-1, 1))
+        labels = np.argmax(labels, axis=1)
+        if strategy == "under":
+            undersample = RandomUnderSampler(sampling_strategy='majority')
+            tweets, labels = undersample.fit_resample(tweets, labels)
+        else:
+            oversample = RandomOverSampler(sampling_strategy='minority')
+            tweets, labels = oversample.fit_resample(tweets, labels)
 
-    def balancing(self, tweets, labels):
-        new_i = np.random.permutation(len(labels))
-        labels = labels[new_i]
-        tweets = tweets[new_i]
-
-        yy = []
-        xx = []
-        y = np.argmax(labels, axis=1)
-        for i, t in enumerate(y):
-            if t == 0:
-                yy.append(t)
-                xx.append(tweets[i])
-        counter = 0
-        for i, t in enumerate(y):
-            if t == 1:
-                yy.append(t)
-                xx.append(tweets[i])
-                counter += 1
-            if counter >= len(y) - y.sum():
-                break
-        yy = np.asarray(yy)
-        xx = np.asarray(xx)
-        new_i = np.random.permutation(len(yy))
-        labels = yy[new_i]
-        tweets = xx[new_i]
-        return tweets, tf.keras.utils.to_categorical(labels, num_classes=len(Counter(labels)), dtype='float32')
+        tweets = tweets.reshape((-1,))
+        labels = tf.keras.utils.to_categorical(labels, num_classes=len(Counter(labels)), dtype='float32')
+        return tweets, labels
 
     def splitting(self, tweets, labels):
         split = sklearn.model_selection.StratifiedShuffleSplit(n_splits=1,
-                                                                   test_size=0.2,
+                                                                   test_size=0.1,
                                                                    random_state=20)
         train_idx, test_idx = list(split.split(tweets, labels))[0]
         xtrain = tweets[train_idx]
